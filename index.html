@@ -1,0 +1,789 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NYC Trip">
+<meta name="theme-color" content="#101418">
+<title>NYC Trip · 21.–26. August 2026</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone@7.24.7/babel.min.js"></script>
+
+<style>
+  :root {
+    --ink: #101418;          /* dunkle Akzentfarbe */
+    --taxi: #FFC400;         /* Taxi-Gelb */
+    --taxi-soft: #FFF3C4;
+    --bg: #f7f7f5;
+    --card: #ffffff;
+    --muted: #6b7280;
+    --line: #e8e8e4;
+    --green: #16a34a;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; padding: 0; background: var(--bg); }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--ink);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  #root { max-width: 560px; margin: 0 auto; }
+
+  /* Header */
+  .app-header {
+    padding: calc(14px + env(safe-area-inset-top)) 16px 10px;
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  }
+  .app-title { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; }
+  .app-title .taxi { color: var(--taxi); }
+  .app-sub { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .edit-btn {
+    border: 1.5px solid var(--ink); background: #fff; color: var(--ink);
+    font-weight: 700; font-size: 14px; padding: 9px 14px; border-radius: 999px;
+    min-height: 40px;
+  }
+  .edit-btn.active { background: var(--ink); color: var(--taxi); border-color: var(--ink); }
+
+  /* Tagesleiste */
+  .day-tabs {
+    position: sticky; top: 0; z-index: 500;
+    display: flex; gap: 6px; padding: 8px 12px 10px;
+    background: rgba(247,247,245,0.94); backdrop-filter: blur(8px);
+    overflow-x: auto; scrollbar-width: none;
+  }
+  .day-tabs::-webkit-scrollbar { display: none; }
+  .day-tab {
+    flex: 1 1 0; min-width: 56px; min-height: 56px;
+    border: none; border-radius: 14px; background: #fff;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+    font-family: inherit; color: var(--ink);
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05); position: relative;
+  }
+  .day-tab .wd { font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.04em; }
+  .day-tab .dt { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .day-tab.active { background: var(--ink); }
+  .day-tab.active .wd { color: var(--taxi); }
+  .day-tab.active .dt { color: #d1d5db; }
+  .day-tab.today::after {
+    content: ""; position: absolute; bottom: 6px; width: 18px; height: 3px;
+    border-radius: 2px; background: var(--taxi);
+  }
+
+  /* Tageskarte */
+  .day-card {
+    background: var(--card); border-radius: 20px; margin: 4px 12px 24px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.06); overflow: hidden;
+  }
+  .day-head { padding: 16px 16px 12px; }
+  .day-date { font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+  .day-title { font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; }
+  .progress-row { display: flex; align-items: center; gap: 10px; margin-top: 10px; }
+  .progress-bar { flex: 1; height: 8px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .progress-fill { height: 100%; background: var(--taxi); border-radius: 4px; transition: width 0.3s ease; }
+  .progress-txt { font-size: 12.5px; font-weight: 700; color: var(--muted); white-space: nowrap; }
+
+  .map-wrap { height: 250px; margin: 0 12px; border-radius: 16px; overflow: hidden; border: 1px solid var(--line); }
+  .leaflet-container { height: 100%; width: 100%; font: inherit; }
+  .num-pin {
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--taxi); color: var(--ink); border: 2.5px solid var(--ink);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 800; font-size: 13px; box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+  }
+  .num-pin.done { background: #d1d5db; border-color: #6b7280; color: #6b7280; }
+
+  /* Timeline */
+  .timeline { padding: 14px 14px 18px; }
+  .stop-row { display: flex; gap: 12px; align-items: flex-start; padding: 12px 4px; }
+  .stop-num {
+    flex: none; width: 30px; height: 30px; border-radius: 50%; margin-top: 1px;
+    background: var(--taxi); color: var(--ink); border: 2px solid var(--ink);
+    display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 13.5px;
+  }
+  .stop-row.done .stop-num { background: var(--line); border-color: #9ca3af; color: #9ca3af; }
+  .stop-main { flex: 1; min-width: 0; }
+  .stop-time { font-size: 12.5px; font-weight: 800; color: var(--muted); letter-spacing: 0.02em; }
+  .stop-name { font-size: 16.5px; font-weight: 800; letter-spacing: -0.01em; margin-top: 1px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+  .stop-row.done .stop-name { color: #9ca3af; text-decoration: line-through; text-decoration-thickness: 2px; }
+  .cat-icon { font-size: 15px; }
+  .stop-addr { font-size: 13.5px; color: var(--muted); margin-top: 2px; }
+  .stop-note {
+    display: inline-block; margin-top: 6px; font-size: 12.5px; font-weight: 600;
+    background: var(--taxi-soft); color: #7a5b00; padding: 3px 9px; border-radius: 999px;
+  }
+  .check {
+    flex: none; width: 30px; height: 30px; border-radius: 9px;
+    border: 2px solid #cbd5e1; background: #fff; margin-top: 1px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 17px; font-weight: 800; color: transparent; padding: 0;
+  }
+  .check.on { background: var(--taxi); border-color: var(--ink); color: var(--ink); }
+
+  /* Transfer-Block */
+  .transfer {
+    margin: 0 0 0 14px; padding: 9px 12px 9px 16px;
+    border-left: 3px dashed #cbd5e1;
+    display: flex; flex-direction: column; gap: 6px;
+  }
+  .leg { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; font-size: 13.5px; font-weight: 600; color: #374151; }
+  .leg .arrow { color: #9ca3af; }
+  .leg-dur { color: var(--muted); font-weight: 600; }
+  .badge {
+    width: 24px; height: 24px; border-radius: 50%; flex: none;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 800; color: #fff;
+  }
+  .transfer-alt { font-size: 12px; color: var(--muted); font-style: italic; }
+  .transfer-note { font-size: 12px; color: var(--muted); font-weight: 600; }
+
+  /* Edit-Modus */
+  .row-tools { display: flex; flex-direction: column; gap: 4px; flex: none; }
+  .tool-btn {
+    width: 32px; height: 32px; border-radius: 9px; border: 1px solid var(--line);
+    background: #fff; font-size: 14px; display: flex; align-items: center; justify-content: center;
+  }
+  .add-between {
+    display: block; margin: 2px auto; border: 1.5px dashed #cbd5e1; background: #fff;
+    color: var(--muted); font-size: 12.5px; font-weight: 700; border-radius: 999px; padding: 6px 14px;
+  }
+  .edit-hint { font-size: 12px; color: var(--muted); text-align: center; padding: 0 16px 10px; }
+  .reset-btn {
+    display: block; margin: 6px auto 0; border: none; background: none;
+    color: #b91c1c; font-size: 13px; font-weight: 700; padding: 10px;
+  }
+
+  /* Bottom-Sheet */
+  .sheet-backdrop {
+    position: fixed; inset: 0; background: rgba(16,20,24,0.45); z-index: 900;
+  }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 1000;
+    max-width: 560px; margin: 0 auto; max-height: 86vh; overflow-y: auto;
+    background: #fff; border-radius: 22px 22px 0 0; padding: 18px 18px calc(22px + env(safe-area-inset-bottom));
+    box-shadow: 0 -8px 30px rgba(0,0,0,0.2);
+  }
+  .sheet h3 { margin: 0 0 14px; font-size: 18px; }
+  .field { margin-bottom: 11px; }
+  .field label { display: block; font-size: 12px; font-weight: 700; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .field input, .field select, .field textarea {
+    width: 100%; border: 1.5px solid var(--line); border-radius: 11px;
+    padding: 11px 12px; font-size: 16px; font-family: inherit; background: #fff; color: var(--ink);
+  }
+  .field-row { display: flex; gap: 10px; }
+  .field-row .field { flex: 1; }
+  .sheet-actions { display: flex; gap: 10px; margin-top: 16px; }
+  .btn {
+    flex: 1; min-height: 48px; border-radius: 13px; font-size: 15.5px; font-weight: 800;
+    border: none; font-family: inherit;
+  }
+  .btn.primary { background: var(--ink); color: var(--taxi); }
+  .btn.ghost { background: #fff; border: 1.5px solid var(--line); color: var(--ink); }
+  .btn.danger { background: #fff; border: 1.5px solid #fecaca; color: #b91c1c; flex: 0 0 auto; padding: 0 16px; }
+  .leg-edit { border: 1.5px solid var(--line); border-radius: 13px; padding: 10px; margin-bottom: 10px; }
+  .leg-edit-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .leg-edit-head span { font-size: 12px; font-weight: 800; color: var(--muted); }
+  .mini-btn { border: 1px solid var(--line); background: #fff; border-radius: 8px; padding: 5px 10px; font-size: 12.5px; font-weight: 700; color: var(--ink); }
+
+  .footer-note { text-align: center; font-size: 12px; color: var(--muted); padding: 0 20px 30px; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect, useRef, useMemo } = React;
+
+/* ───────────────────────── MTA-Linienfarben (offiziell) ───────────────────── */
+const LINE_COLORS = {
+  "1":"#EE352E","2":"#EE352E","3":"#EE352E",
+  "4":"#00933C","5":"#00933C","6":"#00933C",
+  "7":"#B933AD",
+  "A":"#0039A6","C":"#0039A6","E":"#0039A6",
+  "B":"#FF6319","D":"#FF6319","F":"#FF6319","M":"#FF6319",
+  "N":"#FCCC0A","Q":"#FCCC0A","R":"#FCCC0A","W":"#FCCC0A",
+  "L":"#A7A9AC","G":"#6CBE45","J":"#996633","Z":"#996633","S":"#808183"
+};
+const DARK_TEXT_LINES = ["N","Q","R","W"];
+
+const CATS = {
+  sight:    { icon: "🗽", label: "Sightseeing" },
+  food:     { icon: "🍕", label: "Essen" },
+  event:    { icon: "🎭", label: "Event" },
+  party:    { icon: "🎉", label: "Party" },
+  sport:    { icon: "🏃", label: "Aktivität" },
+  hotel:    { icon: "🏨", label: "Hotel" },
+  transfer: { icon: "✈️", label: "Transfer" }
+};
+
+const HOTEL = { lat: 40.7646, lng: -73.9827, addr: "237 W 54th St, Midtown" };
+
+/* ───────────────────────── Reisedaten (fest hinterlegt) ─────────────────────
+   Struktur: stops[i] = Programmpunkt, transfers[i] = Anreise ZU stops[i]
+   (transfers[0] = ab Hotel; null = kein Transfer-Block)                      */
+const DEFAULT_DAYS = [
+  {
+    id: "fri", date: "2026-08-21", wd: "Fr", wdLong: "Freitag", dateLabel: "21.8.",
+    title: "Ankommen in Midtown",
+    stops: [
+      { id:"f1", time:"13:00", name:"Check-in Hotel", addr:"237 W 54th St, Midtown", cat:"hotel", note:"Gepäck abstellen & ankommen", lat:40.7646, lng:-73.9827 },
+      { id:"f2", time:"ca. 14:30", name:"5th Avenue Stroll", addr:"5th Ave / 50th St (Rockefeller Center)", cat:"sight", note:"Gemütlich Richtung Süden", lat:40.7586, lng:-73.9776 },
+      { id:"f3", time:"ca. 15:30", name:"Bryant Park", addr:"6th Ave / 42nd St", cat:"sight", note:"Pause im Park", lat:40.7536, lng:-73.9832 },
+      { id:"f4", time:"ca. 16:15", name:"Grand Central Terminal", addr:"89 E 42nd St", cat:"sight", note:"Main Concourse & Whispering Gallery", lat:40.7527, lng:-73.9772 },
+      { id:"f5", time:"ca. 18:30", name:"Fat Boys Burgers", addr:"853 9th Ave", cat:"food", note:"Walk-in — 2 Min vom Hotel", lat:40.7667, lng:-73.9850 },
+      { id:"f6", time:"ca. 20:30", name:"Times Square", addr:"Broadway / 7th Ave", cat:"sight", note:"Nach Einbruch der Dunkelheit", lat:40.7580, lng:-73.9855 }
+    ],
+    transfers: [
+      null,
+      { legs:[{ type:"walk", text:"10 Min zu Fuß" }] },
+      { legs:[{ type:"walk", text:"10 Min zu Fuß" }] },
+      { legs:[{ type:"walk", text:"8 Min zu Fuß" }] },
+      { legs:[
+          { type:"subway", lines:["S"], from:"Grand Central", to:"Times Sq–42 St", text:"5 Min" },
+          { type:"walk", text:"15 Min zu Fuß" }
+        ], alt:"Oder komplett zu Fuß: ca. 30 Min" },
+      { legs:[{ type:"walk", text:"10 Min zu Fuß" }] }
+    ]
+  },
+  {
+    id: "sat", date: "2026-08-22", wd: "Sa", wdLong: "Samstag", dateLabel: "22.8.",
+    title: "Statue, FiDi, Brooklyn",
+    stops: [
+      { id:"s1", time:"ca. 07:30", name:"Apollo Bagels", addr:"41 John St, FiDi", cat:"food", note:"Frühstück — früh da sein", lat:40.7095, lng:-74.0069 },
+      { id:"s2", time:"ca. 09:00", name:"Statue City Cruises", addr:"Battery Park (Castle Clinton)", cat:"sight", note:"Vorab gebucht — früheste Fähre", lat:40.7033, lng:-74.0170 },
+      { id:"s3", time:"ca. 11:30", name:"Charging Bull", addr:"Broadway / Morris St", cat:"sight", note:"Foto-Stopp", lat:40.7056, lng:-74.0134 },
+      { id:"s4", time:"ca. 12:00", name:"Wall Street", addr:"Wall St / Broad St (NYSE, Federal Hall)", cat:"sight", note:"", lat:40.7070, lng:-74.0110 },
+      { id:"s5", time:"ca. 12:45", name:"9/11 Memorial & Oculus", addr:"180 Greenwich St", cat:"sight", note:"Memorial-Pools, dann Oculus innen", lat:40.7115, lng:-74.0125 },
+      { id:"s6", time:"ca. 14:30", name:"Canal Street & Chinatown", addr:"Canal St / Mott St", cat:"food", note:"Shopping + Dumplings", lat:40.7178, lng:-73.9973 },
+      { id:"s7", time:"ca. 16:30", name:"Rubirosa", addr:"235 Mulberry St, Nolita", cat:"food", note:"Reserviert bzw. Slice-Theke", lat:40.7228, lng:-73.9958 },
+      { id:"s8", time:"ca. 18:30", name:"Brooklyn Bridge Walk", addr:"Einstieg City Hall / Centre St", cat:"sight", note:"ca. 45 Min nach DUMBO — Sonnenuntergang", lat:40.7128, lng:-74.0040 },
+      { id:"s9", time:"ca. 19:45", name:"Time Out Market DUMBO", addr:"55 Water St, Brooklyn", cat:"food", note:"Dinner mit Skyline-Blick", lat:40.7034, lng:-73.9905 },
+      { id:"s10", time:"ca. 21:30", name:"Zurück im Hotel", addr:"237 W 54th St", cat:"hotel", note:"", lat:40.7646, lng:-73.9827 }
+    ],
+    transfers: [
+      { legs:[
+          { type:"subway", lines:["1"], from:"50 St", to:"Rector St", text:"ca. 20 Min" },
+          { type:"walk", text:"8 Min zu Fuß" }
+        ], alt:"Alternativ: 1 bis South Ferry (ca. 25 Min) und Bagels danach" },
+      { legs:[{ type:"walk", text:"12 Min zu Fuß" }] },
+      { legs:[{ type:"walk", text:"3 Min zu Fuß" }] },
+      { legs:[{ type:"walk", text:"5 Min zu Fuß" }] },
+      { legs:[{ type:"walk", text:"10 Min zu Fuß" }] },
+      { legs:[{ type:"walk", text:"15–20 Min zu Fuß" }], alt:"Alternativ: 6 ab Brooklyn Bridge–City Hall bis Canal St" },
+      { legs:[{ type:"walk", text:"10 Min zu Fuß" }] },
+      { legs:[{ type:"walk", text:"ca. 15 Min zu Fuß" }], alt:"Alternativ: 6 ab Spring St bis Brooklyn Bridge–City Hall" },
+      { legs:[{ type:"walk", text:"Über die Brücke (in Stopp 8 enthalten), dann 5 Min runter nach DUMBO" }] },
+      { legs:[
+          { type:"walk", text:"5 Min zu Fuß zur Station York St" },
+          { type:"subway", lines:["F"], from:"York St", to:"57 St/6 Av", text:"ca. 30 Min" },
+          { type:"walk", text:"5 Min zu Fuß" }
+        ] }
+    ]
+  },
+  {
+    id: "sun", date: "2026-08-23", wd: "So", wdLong: "Sonntag", dateLabel: "23.8.",
+    title: "MoMA, Top of the Rock, Party",
+    stops: [
+      { id:"u1", time:"10:30", name:"MoMA", addr:"11 W 53rd St", cat:"sight", note:"1 Block vom Hotel", lat:40.7614, lng:-73.9776 },
+      { id:"u2", time:"ca. 13:00", name:"Top of the Rock", addr:"30 Rockefeller Plaza (Eingang 50th St)", cat:"sight", note:"Zeitfenster-Ticket", lat:40.7591, lng:-73.9789 },
+      { id:"u3", time:"15:00–22:00", name:"Rooftop-Party", addr:"[Adresse eintragen]", cat:"party", note:"Location offen — im Edit-Modus eintragen", lat:40.7549, lng:-73.9840 },
+      { id:"u4", time:"ca. 22:30", name:"Bars nahe Party-Location", addr:"nahe Party", cat:"party", note:"Reinfeiern in den Geburtstag 🎂", lat:40.7560, lng:-73.9830 },
+      { id:"u5", time:"spät", name:"Raising Cane’s", addr:"1501 Broadway, Times Square", cat:"food", note:"Optional — Late-Night-Snack", lat:40.7571, lng:-73.9864 }
+    ],
+    transfers: [
+      { legs:[{ type:"walk", text:"3 Min zu Fuß" }] },
+      { legs:[{ type:"walk", text:"5 Min zu Fuß" }] },
+      { legs:[{ type:"note", text:"Verbindung ergänzen, sobald die Location bekannt ist" }] },
+      { legs:[{ type:"note", text:"Je nach Location — spontan" }] },
+      { legs:[{ type:"walk", text:"Kurzer Fußweg (je nach Location)" }] }
+    ]
+  },
+  {
+    id: "mon", date: "2026-08-24", wd: "Mo", wdLong: "Montag", dateLabel: "24.8.",
+    title: "Geburtstag, Williamsburg, One White Street",
+    stops: [
+      { id:"m1", time:"vormittags", name:"Ausschlafen & easy Start", addr:"Hotel, 237 W 54th St", cat:"hotel", note:"Kein fester Plan — Geburtstag! 🎉", lat:40.7646, lng:-73.9827 },
+      { id:"m2", time:"ca. 14:00", name:"Williamsburg: Bedford Ave", addr:"Bedford Ave, Williamsburg", cat:"sight", note:"Vintage-Läden & Domino Park am Wasser", lat:40.7179, lng:-73.9569 },
+      { id:"m3", time:"ca. 16:30", name:"Peter Pan Donut & Pastry", addr:"727 Manhattan Ave, Greenpoint", cat:"food", note:"Kaffeepause", lat:40.7276, lng:-73.9541 },
+      { id:"m4", time:"ca. 19:00", name:"One White Street", addr:"1 White St, Tribeca", cat:"food", note:"Reserviert über Resy — Geburtstagsdinner", lat:40.7175, lng:-74.0045 },
+      { id:"m5", time:"ca. 22:00", name:"Zurück im Hotel", addr:"237 W 54th St", cat:"hotel", note:"", lat:40.7646, lng:-73.9827 }
+    ],
+    transfers: [
+      null,
+      { legs:[
+          { type:"subway", lines:["C","E"], from:"50 St", to:"14 St/8 Av", text:"" },
+          { type:"subway", lines:["L"], from:"14 St/8 Av", to:"Bedford Av", text:"" }
+        ], note:"gesamt ca. 35 Min" },
+      { legs:[{ type:"walk", text:"ca. 15 Min zu Fuß" }] },
+      { legs:[
+          { type:"walk", text:"15 Min zu Fuß zur Bedford Av" },
+          { type:"subway", lines:["L"], from:"Bedford Av", to:"14 St/8 Av", text:"" },
+          { type:"subway", lines:["A","C","E"], from:"14 St/8 Av", to:"Canal St", text:"" },
+          { type:"walk", text:"6 Min zu Fuß" }
+        ], note:"gesamt ca. 40 Min" },
+      { legs:[
+          { type:"walk", text:"4 Min zu Fuß zur Franklin St" },
+          { type:"subway", lines:["1"], from:"Franklin St", to:"50 St", text:"ca. 20 Min" },
+          { type:"walk", text:"3 Min zu Fuß" }
+        ] }
+    ]
+  },
+  {
+    id: "tue", date: "2026-08-25", wd: "Di", wdLong: "Dienstag", dateLabel: "25.8.",
+    title: "Central Park, AMNH, Broadway",
+    stops: [
+      { id:"d1", time:"ca. 07:30", name:"Joggen im Central Park", addr:"Einstieg Central Park South / 7th Ave", cat:"sport", note:"Lockere Runde, danach frühstücken", lat:40.7664, lng:-73.9788 },
+      { id:"d2", time:"ca. 10:00", name:"American Museum of Natural History", addr:"Central Park West / 79th St", cat:"sight", note:"Timed Ticket", lat:40.7813, lng:-73.9740 },
+      { id:"d3", time:"nachmittags", name:"Central Park schlendern", addr:"Bethesda Terrace / The Mall", cat:"sight", note:"Richtung Hotel, frisch machen", lat:40.7740, lng:-73.9710 },
+      { id:"d4", time:"18:15", name:"Al Hirschfeld Theatre", addr:"302 W 45th St", cat:"event", note:"19:00 Moulin Rouge! — vorher da sein", lat:40.7593, lng:-73.9890 },
+      { id:"d5", time:"ca. 22:00", name:"Joe’s Pizza", addr:"1435 Broadway", cat:"food", note:"Late-Night-Slice nach der Show", lat:40.7537, lng:-73.9869 }
+    ],
+    transfers: [
+      { legs:[{ type:"walk", text:"5 Min zu Fuß" }] },
+      { legs:[{ type:"subway", lines:["B","C"], from:"59 St–Columbus Circle", to:"81 St", text:"10 Min" }],
+        alt:"Alternativ: ca. 30 Min zu Fuß durch den Park" },
+      { legs:[{ type:"walk", text:"ca. 15 Min zu Fuß in den Park" }] },
+      { legs:[{ type:"walk", text:"Zum Hotel (frisch machen), dann 10 Min zu Fuß zum Theater" }] },
+      { legs:[{ type:"walk", text:"5 Min zu Fuß" }] }
+    ]
+  },
+  {
+    id: "wed", date: "2026-08-26", wd: "Mi", wdLong: "Mittwoch", dateLabel: "26.8.",
+    title: "High Line + Abflug",
+    stops: [
+      { id:"w1", time:"09:00", name:"Sunday Morning", addr:"11 W 25th St", cat:"food", note:"Cinnamon Rolls — früh da sein", lat:40.7437, lng:-73.9901 },
+      { id:"w2", time:"10:00", name:"Chelsea Market", addr:"75 9th Ave", cat:"food", note:"Snacks & Shops", lat:40.7420, lng:-74.0048 },
+      { id:"w3", time:"11:00", name:"High Line (komplett)", addr:"Einstieg Gansevoort St → Hudson Yards", cat:"sight", note:"ca. 60 Min mit Stopps", lat:40.7396, lng:-74.0080 },
+      { id:"w4", time:"ca. 12:30", name:"The Edge (optional)", addr:"30 Hudson Yards", cat:"sight", note:"Optional — spontan entscheiden", lat:40.7539, lng:-74.0010 },
+      { id:"w5", time:"ca. 14:00", name:"Hotel: Koffer holen", addr:"237 W 54th St", cat:"hotel", note:"Frisch machen & packen", lat:40.7646, lng:-73.9827 },
+      { id:"w6", time:"16:00", name:"Abfahrt zum JFK", addr:"JFK Airport", cat:"transfer", note:"60–90 Min einplanen", lat:40.6413, lng:-73.7781, noMap:true }
+    ],
+    transfers: [
+      { legs:[{ type:"subway", lines:["R","W"], from:"57 St/7 Av", to:"23 St", text:"ca. 15 Min" }] },
+      { legs:[{ type:"walk", text:"15 Min zu Fuß" }] },
+      { legs:[{ type:"walk", text:"8 Min zu Fuß" }] },
+      { legs:[{ type:"walk", text:"Direkt am Ende der High Line" }] },
+      { legs:[
+          { type:"subway", lines:["7"], from:"34 St–Hudson Yards", to:"Times Sq–42 St", text:"5 Min" },
+          { type:"walk", text:"10 Min zu Fuß" }
+        ] },
+      { legs:[{ type:"taxi", text:"Uber/Taxi: 60–90 Min" }],
+        alt:"Alternativ: E ab 50 St bis Sutphin Blvd + AirTrain" }
+    ]
+  }
+];
+
+/* ───────────────────────── Persistenz (localStorage) ──────────────────────── */
+const STORE_KEY = "nyc-trip-2026-v1";
+function loadStore() {
+  try {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (!data || !Array.isArray(data.days)) return null;
+    return data;
+  } catch (e) { return null; }
+}
+function saveStore(days, checks) {
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ days, checks })); } catch (e) {}
+}
+const clone = (x) => JSON.parse(JSON.stringify(x));
+
+function localToday() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate());
+}
+
+/* ───────────────────────── UI-Bausteine ───────────────────────────────────── */
+function LineBadge({ line }) {
+  const bg = LINE_COLORS[line] || "#555";
+  const color = DARK_TEXT_LINES.includes(line) ? "#111" : "#fff";
+  return <span className="badge" style={{ background: bg, color }}>{line}</span>;
+}
+
+function TransferBlock({ transfer, editMode, onEdit }) {
+  if (!transfer && !editMode) return null;
+  return (
+    <div className="transfer">
+      {transfer && transfer.legs.map((leg, i) => (
+        <div className="leg" key={i}>
+          {leg.type === "subway" && <React.Fragment>
+            {leg.lines.map((l) => <LineBadge key={l} line={l} />)}
+            <span>{leg.from}</span><span className="arrow">→</span><span>{leg.to}</span>
+            {leg.text ? <span className="leg-dur">· {leg.text}</span> : null}
+          </React.Fragment>}
+          {leg.type === "walk" && <React.Fragment><span>🚶</span><span className="leg-dur">{leg.text}</span></React.Fragment>}
+          {leg.type === "taxi" && <React.Fragment><span>🚕</span><span className="leg-dur">{leg.text}</span></React.Fragment>}
+          {leg.type === "note" && <React.Fragment><span>ℹ️</span><span className="leg-dur">{leg.text}</span></React.Fragment>}
+        </div>
+      ))}
+      {transfer && transfer.note ? <div className="transfer-note">{transfer.note}</div> : null}
+      {transfer && transfer.alt ? <div className="transfer-alt">{transfer.alt}</div> : null}
+      {editMode && (
+        <button className="mini-btn" style={{ alignSelf: "flex-start" }} onClick={onEdit}>
+          ✏️ {transfer ? "Verbindung bearbeiten" : "Verbindung hinzufügen"}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function DayMap({ day, checks, editMode, onMovePin }) {
+  const ref = useRef(null);
+  const mapRef = useRef(null);
+  const layerRef = useRef(null);
+
+  useEffect(() => {
+    const map = L.map(ref.current, { scrollWheelZoom: false, zoomControl: true });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap", maxZoom: 19
+    }).addTo(map);
+    mapRef.current = map;
+    layerRef.current = L.layerGroup().addTo(map);
+    return () => { map.remove(); mapRef.current = null; };
+  }, []);
+
+  useEffect(() => {
+    const map = mapRef.current, layer = layerRef.current;
+    if (!map || !layer) return;
+    layer.clearLayers();
+    const pts = [];
+    day.stops.forEach((s, i) => {
+      if (s.noMap) return;
+      const done = !!checks[s.id];
+      const icon = L.divIcon({
+        className: "",
+        html: '<div class="num-pin' + (done ? " done" : "") + '">' + (i + 1) + "</div>",
+        iconSize: [28, 28], iconAnchor: [14, 14]
+      });
+      const m = L.marker([s.lat, s.lng], { icon, draggable: editMode });
+      m.bindPopup("<b>" + (i + 1) + ". " + s.name + "</b><br>" + s.time);
+      if (editMode) {
+        m.on("dragend", (e) => {
+          const ll = e.target.getLatLng();
+          onMovePin(s.id, ll.lat, ll.lng);
+        });
+      }
+      m.addTo(layer);
+      pts.push([s.lat, s.lng]);
+    });
+    if (pts.length > 1) {
+      L.polyline(pts, { color: "#101418", weight: 3, opacity: 0.45, dashArray: "6 8" }).addTo(layer);
+      map.fitBounds(L.latLngBounds(pts), { padding: [34, 34] });
+    } else if (pts.length === 1) {
+      map.setView(pts[0], 15);
+    }
+  }, [day, checks, editMode]);
+
+  return <div className="map-wrap"><div ref={ref} style={{ height: "100%" }}></div></div>;
+}
+
+/* ───────────────────────── Edit-Sheets ────────────────────────────────────── */
+function StopSheet({ initial, isNew, onSave, onDelete, onClose }) {
+  const [s, setS] = useState(clone(initial));
+  const set = (k, v) => setS((old) => ({ ...old, [k]: v }));
+  return (
+    <React.Fragment>
+      <div className="sheet-backdrop" onClick={onClose}></div>
+      <div className="sheet">
+        <h3>{isNew ? "Neuer Stopp" : "Stopp bearbeiten"}</h3>
+        <div className="field-row">
+          <div className="field"><label>Uhrzeit</label>
+            <input value={s.time} onChange={(e) => set("time", e.target.value)} placeholder="z. B. ca. 14:00" /></div>
+          <div className="field"><label>Kategorie</label>
+            <select value={s.cat} onChange={(e) => set("cat", e.target.value)}>
+              {Object.keys(CATS).map((k) => <option key={k} value={k}>{CATS[k].icon} {CATS[k].label}</option>)}
+            </select></div>
+        </div>
+        <div className="field"><label>Name</label>
+          <input value={s.name} onChange={(e) => set("name", e.target.value)} /></div>
+        <div className="field"><label>Adresse</label>
+          <input value={s.addr} onChange={(e) => set("addr", e.target.value)} /></div>
+        <div className="field"><label>Notiz</label>
+          <input value={s.note} onChange={(e) => set("note", e.target.value)} placeholder="z. B. vorab gebucht" /></div>
+        <div className="field-row">
+          <div className="field"><label>Breitengrad (Lat)</label>
+            <input type="number" step="0.0001" value={s.lat} onChange={(e) => set("lat", parseFloat(e.target.value) || 0)} /></div>
+          <div className="field"><label>Längengrad (Lng)</label>
+            <input type="number" step="0.0001" value={s.lng} onChange={(e) => set("lng", parseFloat(e.target.value) || 0)} /></div>
+        </div>
+        <div className="field"><label>
+          <input type="checkbox" style={{ width: "auto", marginRight: 6 }} checked={!!s.noMap}
+            onChange={(e) => set("noMap", e.target.checked)} />
+          Nicht auf der Karte anzeigen (z. B. Flughafen)</label></div>
+        <p style={{ fontSize: 12, color: "var(--muted)", margin: "4px 0 0" }}>
+          Tipp: Im Edit-Modus lässt sich der Pin auch direkt auf der Karte verschieben.</p>
+        <div className="sheet-actions">
+          {!isNew && <button className="btn danger" onClick={onDelete}>🗑</button>}
+          <button className="btn ghost" onClick={onClose}>Abbrechen</button>
+          <button className="btn primary" onClick={() => onSave(s)}>Speichern</button>
+        </div>
+      </div>
+    </React.Fragment>
+  );
+}
+
+const EMPTY_TRANSFER = { legs: [{ type: "walk", text: "10 Min zu Fuß" }], alt: "", note: "" };
+
+function TransferSheet({ initial, onSave, onRemove, onClose }) {
+  const [t, setT] = useState(initial ? clone(initial) : clone(EMPTY_TRANSFER));
+  const setLeg = (i, k, v) => setT((old) => {
+    const legs = old.legs.slice();
+    legs[i] = { ...legs[i], [k]: v };
+    if (k === "type" && v === "subway" && !legs[i].lines) legs[i] = { ...legs[i], lines: [], from: "", to: "" };
+    return { ...old, legs };
+  });
+  const addLeg = () => setT((old) => ({ ...old, legs: [...old.legs, { type: "walk", text: "" }] }));
+  const removeLeg = (i) => setT((old) => ({ ...old, legs: old.legs.filter((_, j) => j !== i) }));
+  return (
+    <React.Fragment>
+      <div className="sheet-backdrop" onClick={onClose}></div>
+      <div className="sheet">
+        <h3>Verbindung bearbeiten</h3>
+        {t.legs.map((leg, i) => (
+          <div className="leg-edit" key={i}>
+            <div className="leg-edit-head">
+              <span>ABSCHNITT {i + 1}</span>
+              {t.legs.length > 1 && <button className="mini-btn" onClick={() => removeLeg(i)}>Entfernen</button>}
+            </div>
+            <div className="field"><label>Art</label>
+              <select value={leg.type} onChange={(e) => setLeg(i, "type", e.target.value)}>
+                <option value="subway">🚇 Subway</option>
+                <option value="walk">🚶 Zu Fuß</option>
+                <option value="taxi">🚕 Taxi/Uber</option>
+                <option value="note">ℹ️ Hinweis</option>
+              </select></div>
+            {leg.type === "subway" && <React.Fragment>
+              <div className="field"><label>Linien (Komma-getrennt, z. B. A,C,E)</label>
+                <input value={(leg.lines || []).join(",")}
+                  onChange={(e) => setLeg(i, "lines", e.target.value.split(",").map((x) => x.trim().toUpperCase()).filter(Boolean))} /></div>
+              <div className="field-row">
+                <div className="field"><label>Von</label>
+                  <input value={leg.from || ""} onChange={(e) => setLeg(i, "from", e.target.value)} /></div>
+                <div className="field"><label>Bis</label>
+                  <input value={leg.to || ""} onChange={(e) => setLeg(i, "to", e.target.value)} /></div>
+              </div>
+              <div className="field"><label>Fahrtzeit</label>
+                <input value={leg.text || ""} onChange={(e) => setLeg(i, "text", e.target.value)} placeholder="z. B. ca. 25 Min" /></div>
+            </React.Fragment>}
+            {leg.type !== "subway" &&
+              <div className="field"><label>Text</label>
+                <input value={leg.text || ""} onChange={(e) => setLeg(i, "text", e.target.value)} placeholder="z. B. 10 Min zu Fuß" /></div>}
+          </div>
+        ))}
+        <button className="mini-btn" onClick={addLeg}>+ Abschnitt (z. B. Umstieg)</button>
+        <div className="field" style={{ marginTop: 12 }}><label>Alternative (optional)</label>
+          <input value={t.alt || ""} onChange={(e) => setT((old) => ({ ...old, alt: e.target.value }))} placeholder="z. B. Alternativ: zu Fuß 20 Min" /></div>
+        <div className="field"><label>Hinweis (optional)</label>
+          <input value={t.note || ""} onChange={(e) => setT((old) => ({ ...old, note: e.target.value }))} placeholder="z. B. gesamt ca. 35 Min" /></div>
+        <div className="sheet-actions">
+          {initial && <button className="btn danger" onClick={onRemove}>🗑</button>}
+          <button className="btn ghost" onClick={onClose}>Abbrechen</button>
+          <button className="btn primary" onClick={() => onSave(t)}>Speichern</button>
+        </div>
+      </div>
+    </React.Fragment>
+  );
+}
+
+/* ───────────────────────── App ────────────────────────────────────────────── */
+function App() {
+  const stored = useMemo(loadStore, []);
+  const [days, setDays] = useState(() => (stored && stored.days) ? stored.days : clone(DEFAULT_DAYS));
+  const [checks, setChecks] = useState(() => (stored && stored.checks) ? stored.checks : {});
+  const today = localToday();
+  const [active, setActive] = useState(() => {
+    const i = DEFAULT_DAYS.findIndex((d) => d.date === today);
+    return i >= 0 ? i : 0;
+  });
+  const [editMode, setEditMode] = useState(false);
+  const [editing, setEditing] = useState(null); // {kind, dayIdx, idx, isNew}
+
+  useEffect(() => { saveStore(days, checks); }, [days, checks]);
+
+  const day = days[active];
+  const doneCount = day.stops.filter((s) => checks[s.id]).length;
+
+  const toggleCheck = (id) => setChecks((c) => ({ ...c, [id]: !c[id] }));
+
+  const updateDays = (fn) => setDays((old) => { const next = clone(old); fn(next); return next; });
+
+  const movePin = (stopId, lat, lng) => updateDays((d) => {
+    d.forEach((dy) => dy.stops.forEach((s) => {
+      if (s.id === stopId) { s.lat = Math.round(lat * 1e5) / 1e5; s.lng = Math.round(lng * 1e5) / 1e5; }
+    }));
+  });
+
+  const saveStop = (stop) => {
+    const { dayIdx, idx, isNew } = editing;
+    updateDays((d) => {
+      if (isNew) {
+        stop.id = "x" + Date.now();
+        d[dayIdx].stops.splice(idx, 0, stop);
+        d[dayIdx].transfers.splice(idx, 0, clone(EMPTY_TRANSFER));
+      } else {
+        d[dayIdx].stops[idx] = stop;
+      }
+    });
+    setEditing(null);
+  };
+  const deleteStop = () => {
+    const { dayIdx, idx } = editing;
+    updateDays((d) => {
+      d[dayIdx].stops.splice(idx, 1);
+      d[dayIdx].transfers.splice(idx, 1);
+    });
+    setEditing(null);
+  };
+  const moveStop = (dayIdx, idx, dir) => updateDays((d) => {
+    const stops = d[dayIdx].stops, j = idx + dir;
+    if (j < 0 || j >= stops.length) return;
+    [stops[idx], stops[j]] = [stops[j], stops[idx]];
+  });
+  const saveTransfer = (t) => {
+    const { dayIdx, idx } = editing;
+    updateDays((d) => { d[dayIdx].transfers[idx] = t; });
+    setEditing(null);
+  };
+  const removeTransfer = () => {
+    const { dayIdx, idx } = editing;
+    updateDays((d) => { d[dayIdx].transfers[idx] = null; });
+    setEditing(null);
+  };
+  const resetAll = () => {
+    if (confirm("Alle Änderungen und Häkchen zurücksetzen?")) {
+      setDays(clone(DEFAULT_DAYS)); setChecks({}); setEditMode(false);
+      try { localStorage.removeItem(STORE_KEY); } catch (e) {}
+    }
+  };
+
+  /* Swipe zwischen Tagen (nur auf der Timeline, nicht auf der Karte) */
+  const touch = useRef(null);
+  const onTouchStart = (e) => {
+    if (e.target.closest(".leaflet-container") || e.target.closest(".sheet")) { touch.current = null; return; }
+    touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  };
+  const onTouchEnd = (e) => {
+    if (!touch.current) return;
+    const dx = e.changedTouches[0].clientX - touch.current.x;
+    const dy = e.changedTouches[0].clientY - touch.current.y;
+    touch.current = null;
+    if (Math.abs(dx) > 60 && Math.abs(dy) < 50) {
+      setActive((a) => Math.min(days.length - 1, Math.max(0, a + (dx < 0 ? 1 : -1))));
+    }
+  };
+
+  const newStopTemplate = { time: "ca. 12:00", name: "", addr: "", cat: "sight", note: "", lat: HOTEL.lat, lng: HOTEL.lng };
+
+  return (
+    <div onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      <header className="app-header">
+        <div>
+          <div className="app-title">NYC <span className="taxi">■</span> Trip</div>
+          <div className="app-sub">21.–26. August 2026 · 3 Personen · Subway mit OMNY (kontaktlos)</div>
+        </div>
+        <button className={"edit-btn" + (editMode ? " active" : "")} onClick={() => setEditMode((m) => !m)}>
+          {editMode ? "Fertig" : "Bearbeiten"}
+        </button>
+      </header>
+
+      <nav className="day-tabs">
+        {days.map((d, i) => (
+          <button key={d.id}
+            className={"day-tab" + (i === active ? " active" : "") + (d.date === today ? " today" : "")}
+            onClick={() => setActive(i)}>
+            <span className="wd">{d.wd}</span>
+            <span className="dt">{d.dateLabel}</span>
+          </button>
+        ))}
+      </nav>
+
+      <section className="day-card">
+        <div className="day-head">
+          <div className="day-date">{day.wdLong} · {day.dateLabel}</div>
+          <div className="day-title">{day.title}</div>
+          <div className="progress-row">
+            <div className="progress-bar">
+              <div className="progress-fill" style={{ width: (day.stops.length ? (doneCount / day.stops.length) * 100 : 0) + "%" }}></div>
+            </div>
+            <span className="progress-txt">{doneCount}/{day.stops.length} erledigt</span>
+          </div>
+        </div>
+
+        <DayMap key={day.id} day={day} checks={checks} editMode={editMode} onMovePin={movePin} />
+        {editMode && <p className="edit-hint" style={{ paddingTop: 8 }}>Pins auf der Karte lassen sich per Ziehen verschieben.</p>}
+
+        <div className="timeline">
+          {day.stops.map((s, i) => {
+            const done = !!checks[s.id];
+            const cat = CATS[s.cat] || CATS.sight;
+            return (
+              <React.Fragment key={s.id}>
+                <TransferBlock transfer={day.transfers[i]} editMode={editMode}
+                  onEdit={() => setEditing({ kind: "transfer", dayIdx: active, idx: i })} />
+                <div className={"stop-row" + (done ? " done" : "")}>
+                  <div className="stop-num">{i + 1}</div>
+                  <div className="stop-main" onClick={() => editMode && setEditing({ kind: "stop", dayIdx: active, idx: i })}>
+                    <div className="stop-time">{s.time}</div>
+                    <div className="stop-name"><span className="cat-icon">{cat.icon}</span>{s.name || "(ohne Namen)"}</div>
+                    <div className="stop-addr">{s.addr}</div>
+                    {s.note ? <span className="stop-note">{s.note}</span> : null}
+                  </div>
+                  {editMode ? (
+                    <div className="row-tools">
+                      <button className="tool-btn" onClick={() => setEditing({ kind: "stop", dayIdx: active, idx: i })}>✏️</button>
+                      <button className="tool-btn" onClick={() => moveStop(active, i, -1)}>↑</button>
+                      <button className="tool-btn" onClick={() => moveStop(active, i, 1)}>↓</button>
+                    </div>
+                  ) : (
+                    <button className={"check" + (done ? " on" : "")} onClick={() => toggleCheck(s.id)} aria-label="abhaken">✓</button>
+                  )}
+                </div>
+                {editMode && (
+                  <button className="add-between"
+                    onClick={() => setEditing({ kind: "stop", dayIdx: active, idx: i + 1, isNew: true })}>
+                    + Stopp einfügen
+                  </button>
+                )}
+              </React.Fragment>
+            );
+          })}
+          {editMode && day.stops.length === 0 && (
+            <button className="add-between" onClick={() => setEditing({ kind: "stop", dayIdx: active, idx: 0, isNew: true })}>
+              + Ersten Stopp anlegen
+            </button>
+          )}
+          {editMode && <button className="reset-btn" onClick={resetAll}>Alles auf Standard zurücksetzen</button>}
+        </div>
+      </section>
+
+      <p className="footer-note">
+        Häkchen & Änderungen werden auf diesem Gerät gespeichert. 🚕
+      </p>
+
+      {editing && editing.kind === "stop" && (
+        <StopSheet
+          initial={editing.isNew ? newStopTemplate : days[editing.dayIdx].stops[editing.idx]}
+          isNew={!!editing.isNew}
+          onSave={saveStop} onDelete={deleteStop} onClose={() => setEditing(null)} />
+      )}
+      {editing && editing.kind === "transfer" && (
+        <TransferSheet
+          initial={days[editing.dayIdx].transfers[editing.idx]}
+          onSave={saveTransfer} onRemove={removeTransfer} onClose={() => setEditing(null)} />
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+</script>
+</body>
+</html>
